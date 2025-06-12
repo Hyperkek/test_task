@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
@@ -302,13 +302,13 @@ public class Program
             using var context = new WarehouseContext();
 
             // если базы нет то мы ее создаем, если есть то очищаем (закомментировано так как мы читаем из уже созданной базы)
-            context.Database.EnsureDeleted();
-            context.Database.EnsureCreated();
+            //context.Database.EnsureDeleted();
+            //context.Database.EnsureCreated();
 
             var warehouse = new Warehouse(context);
 
             // заполнение базы тестовыми данными (закомментировано так как мы читаем из уже созданной базы)
-            CreateTestData(warehouse);
+            //CreateTestData(warehouse);
 
             // вывод данных из базы данных согласно ТЗ
             PrintResults(warehouse);
