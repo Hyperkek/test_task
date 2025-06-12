@@ -1,9 +1,8 @@
 ﻿using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Options;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
-public abstract class ThreeDObject
+public abstract class ThreeDObject // класс трёхмерного объекта от которого наследуются поля классов коробки и паллеты
 {
     [Key]
     [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
@@ -11,38 +10,65 @@ public abstract class ThreeDObject
 
     [Required]
     [Range(1, uint.MaxValue)]
-    public uint Width { get; protected set; }
+    public uint Width { 
+        get; 
+        protected set;
+    } // в базе габариты коробок и паллетов хранятся в сантиметрах в uint.
 
     [Required]
     [Range(1, uint.MaxValue)]
-    public uint Height { get; protected set; }
+    public uint Height { 
+        get; 
+        protected set; 
+    }
 
     [Required]
     [Range(1, uint.MaxValue)]
-    public uint Depth { get; protected set; }
+    public uint Depth { 
+        get; 
+        protected set; 
+    }
 
     [Required]
     [Range(1, uint.MaxValue)]
-    public virtual uint Weight { get; protected set; }
+    public virtual uint Weight { 
+        get; 
+        protected set; 
+    } // вес хранится в граммах в uint, это позволяет избежать отрицательных значений.
 
     [NotMapped]
-    public virtual uint Volume { get; protected set; }
+    public virtual uint Volume { 
+        get; 
+        protected set; 
+    }
 }
 
-public class Box : ThreeDObject
+public class Box : ThreeDObject // класс коробки
 {
     [NotMapped]
     public override uint Volume => Width * Height * Depth;
-    public DateOnly? ProductionDate { get; private set; }
-    public DateOnly ExpireDate { get; private set; }
-    public uint? PalletId { get; private set; }
-    public Pallet? Pallet { get; private set; }
+    public DateOnly? ProductionDate { 
+        get; 
+        private set; 
+    }
+    public DateOnly ExpireDate { 
+        get; 
+        private set; 
+    }
+    public uint? PalletId { 
+        get; 
+        private set; 
+    }
+    public Pallet? Pallet { 
+        get; 
+        private set; 
+    }
 
     protected Box() { }
 
     public Box(uint width, uint height, uint depth, uint weight, DateOnly? productionDate, DateOnly? expireDate)
     {
-        if (width == 0 || height == 0 || depth == 0)
+        if (width == 0 || height == 0 || depth == 0 || weight == 0)
             throw new ArgumentException("Габариты коробки должны быть больше нуля.");
 
         Width = width;
@@ -77,7 +103,7 @@ public class Box : ThreeDObject
     
     public bool IsExpired()
     {
-        return this.ExpireDate < DateOnly.FromDateTime(DateTime.Now);
+        return this.ExpireDate > DateOnly.FromDateTime(DateTime.Now);
     }
 
     public void AssignToPallet(Pallet pallet)
@@ -97,7 +123,7 @@ public class Box : ThreeDObject
     }
 }
 
-public class Pallet : ThreeDObject
+public class Pallet : ThreeDObject // класс паллеты
 {
     private readonly List<Box> _boxes = new();
     public IReadOnlyCollection<Box> Boxes => _boxes.AsReadOnly();
@@ -106,7 +132,7 @@ public class Pallet : ThreeDObject
     public DateOnly ExpireDate => Boxes.Any() ? _boxes.Min(b => b.ExpireDate) : DateOnly.MaxValue;
 
     [NotMapped]
-    public override uint Volume => base.Volume + (uint)_boxes.Sum(b => b.Volume);
+    public override uint Volume => Width * Height * Depth + (uint)_boxes.Sum(b => b.Volume);
 
     [NotMapped]
     public override uint Weight => (uint)_boxes.Sum(b => b.Weight) + 30000;
@@ -130,9 +156,15 @@ public class Pallet : ThreeDObject
         {
             throw new InvalidOperationException("Коробка не может быть больше паллета.");
         }
+
         if (box.PalletId != null && !ReferenceEquals(box.Pallet, this))
         {
             throw new InvalidOperationException($"Коробка {box.Id} уже находится в другом паллете.");
+        }
+
+        if (_boxes.Contains(box))
+        {
+            throw new InvalidOperationException($"Коробка {box.Id} уже добавлена в этот паллет.");
         }
 
         _boxes.Add(box);
@@ -149,16 +181,24 @@ public class Pallet : ThreeDObject
 
     public bool IsExpired()
     {
-        return this.ExpireDate < DateOnly.FromDateTime(DateTime.Now);
+        return this.ExpireDate > DateOnly.FromDateTime(DateTime.Now);
     }
 }
 
 public class WarehouseContext : DbContext
 {
-    public DbSet<Pallet> Pallets { get; set; }
-    public DbSet<Box> Boxes { get; set; }
+    public DbSet<Pallet> Pallets { 
+        get; 
+        set; 
+    }
+    public DbSet<Box> Boxes {
+        get; 
+        set; 
+    }
 
     public WarehouseContext() { }
+
+    public WarehouseContext(DbContextOptions<WarehouseContext> options) : base(options) { }
 
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {
@@ -260,13 +300,17 @@ public class Program
         try
         {
             using var context = new WarehouseContext();
+
+            // если базы нет то мы ее создаем, если есть то очищаем (закомментировано так как мы читаем из уже созданной базы)
             context.Database.EnsureDeleted();
             context.Database.EnsureCreated();
 
             var warehouse = new Warehouse(context);
 
+            // заполнение базы тестовыми данными (закомментировано так как мы читаем из уже созданной базы)
             CreateTestData(warehouse);
 
+            // вывод данных из базы данных согласно ТЗ
             PrintResults(warehouse);
         }
         catch (Exception ex)
@@ -287,28 +331,28 @@ public class Program
         try
         {
             var boxes = new List<Box>
-        {
-            new Box(100, 50, 20, 100, new DateOnly(2023, 11, 15), null),
-            new Box(100, 50, 20, 100, null, new DateOnly(2024, 1, 1)),
-            new Box(1000, 500, 200, 100, new DateOnly(2023, 11, 15), new DateOnly(2024, 2, 20)),
-            new Box(800, 400, 200, 200, new DateOnly(2023, 12, 1), null),
-            new Box(800, 400, 200, 4000, new DateOnly(2023, 12, 1), null),
-            new Box(800, 400, 200, 200, new DateOnly(2023, 12, 1), null),
-            new Box(120, 600, 300, 500, new DateOnly(2023, 10, 10), new DateOnly(2024, 3, 15)),
-            new Box(1500, 700, 400, 800, null, new DateOnly(2024, 4, 1)),
-            new Box(900, 900, 900, 1200, new DateOnly(2023, 12, 25), null),
-            new Box(700, 500, 300, 600, new DateOnly(2023, 11, 30), new DateOnly(2024, 1, 15)),
-            new Box(100, 100, 500, 1500, new DateOnly(2023, 12, 10), null),
-            new Box(600, 400, 200, 300, new DateOnly(2023, 12, 5), new DateOnly(2024, 2, 28)),
-            new Box(500, 500, 500, 700, null, new DateOnly(2024, 3, 10)),
-            new Box(800, 600, 400, 1000, new DateOnly(2023, 11, 20), null),
-            new Box(1200, 800, 600, 2000, new DateOnly(2023, 12, 15), new DateOnly(2024, 4, 5)),
-            new Box(700, 700, 700, 900, new DateOnly(2023, 12, 20), null),
-            new Box(900, 500, 300, 400, new DateOnly(2023, 11, 25), new DateOnly(2024, 1, 31)),
-            new Box(1100, 600, 400, 800, null, new DateOnly(2023, 12, 5)),
-            new Box(1000, 800, 500, 1200, new DateOnly(2023, 12, 5), null),
-            new Box(600, 600, 600, 600, new DateOnly(2023, 12, 18), new DateOnly(2024, 3, 20))
-        };
+            {
+                new Box(10, 50, 20, 100, new DateOnly(2023, 11, 15), null),
+                new Box(10, 50, 20, 100, null, new DateOnly(2024, 1, 1)),
+                new Box(100, 50, 20, 100, new DateOnly(2023, 11, 15), new DateOnly(2024, 2, 20)),
+                new Box(80, 40, 20, 200, new DateOnly(2023, 12, 1), null),
+                new Box(80, 40, 20, 4000, new DateOnly(2023, 12, 1), null),
+                new Box(80, 40, 20, 200, new DateOnly(2023, 12, 1), null),
+                new Box(12, 60, 30, 500, new DateOnly(2023, 10, 10), new DateOnly(2024, 3, 15)),
+                new Box(150, 70, 40, 800, null, new DateOnly(2024, 4, 1)),
+                new Box(90, 90, 90, 1200, new DateOnly(2023, 12, 25), null),
+                new Box(70, 50, 30, 600, new DateOnly(2023, 11, 30), new DateOnly(2024, 1, 15)),
+                new Box(10, 10, 50, 1500, new DateOnly(2023, 12, 10), null),
+                new Box(60, 40, 20, 300, new DateOnly(2023, 12, 5), new DateOnly(2024, 2, 28)),
+                new Box(50, 50, 50, 700, null, new DateOnly(2024, 3, 10)),
+                new Box(80, 60, 40, 1000, new DateOnly(2023, 11, 20), null),
+                new Box(120, 80, 60, 2000, new DateOnly(2023, 12, 15), new DateOnly(2024, 4, 5)),
+                new Box(70, 70, 70, 900, new DateOnly(2023, 12, 20), null),
+                new Box(90, 50, 30, 400, new DateOnly(2023, 11, 25), new DateOnly(2024, 1, 31)),
+                new Box(110, 60, 40, 800, null, new DateOnly(2023, 12, 5)),
+                new Box(100, 80, 50, 1200, new DateOnly(2023, 12, 5), null),
+                new Box(60, 60, 60, 600, new DateOnly(2023, 12, 18), new DateOnly(2024, 3, 20))
+            };
 
             foreach (var box in boxes)
             {
@@ -317,20 +361,20 @@ public class Program
             warehouse.Context.SaveChanges();
 
             var pallets = new List<Pallet>
-        {
-            new Pallet(1000, 1000, 1000),
-            new Pallet(1000, 1000, 1000),
-            new Pallet(1200, 1200, 1200),
-            new Pallet(1200, 1200, 1200),
-            new Pallet(1500, 1500, 1500),
-            new Pallet(1200, 1200, 1200),
-            new Pallet(1000, 1000, 1000),
-            new Pallet(1200, 1200, 1200),
-            new Pallet(1500, 1500, 1500),
-            new Pallet(1000, 1000, 1000),
-            new Pallet(1200, 1200, 1200),
-            new Pallet(1500, 1500, 1500)
-        };
+            {
+                new Pallet(100, 100, 100),
+                new Pallet(100, 100, 100),
+                new Pallet(120, 120, 120),
+                new Pallet(120, 120, 120),
+                new Pallet(150, 150, 150),
+                new Pallet(120, 120, 120),
+                new Pallet(100, 100, 100),
+                new Pallet(120, 120, 120),
+                new Pallet(150, 150, 150),
+                new Pallet(100, 100, 100),
+                new Pallet(120, 120, 120),
+                new Pallet(150, 150, 150)
+            };
 
             foreach (var pallet in pallets)
             {
@@ -370,18 +414,18 @@ public class Program
         }
     }
 
-    private static void PrintResults(Warehouse warehouse)
+    private static void PrintResults(Warehouse warehouse) // данные при выводе переводятся в метры кубические и киллограмы
     {
         try
         {
-            Console.WriteLine("Группировка по дате истечения срока годности (по возрастанию веса):");
+            Console.WriteLine("Группировка по дате истечения срока годности (по возрастанию веса в группах):");
             foreach (var group in warehouse.GetPalletsGroupedByExpiration())
             {
                 Console.WriteLine($"Срок годности до: {group.Key:yyyy-MM-dd}");
                 foreach (var pallet in group)
                 {
                     double weightKg = pallet.Weight / 1e3;
-                    double volumeM = pallet.Volume / 1e9;
+                    double volumeM = pallet.Volume / 1e6;
                     Console.WriteLine($"  Паллет {pallet.Id}, Вес: {weightKg}кг, Объём: {volumeM}м^3");
                 }
             }
@@ -389,17 +433,17 @@ public class Program
             Console.WriteLine("\nТоп 3 паллеты с самым долгим сроком хранения (по возрастанию объёма):");
             foreach (var pallet in warehouse.GetTop3PalletsWithLongestExpiringBoxes())
             {
-                double volumeM = pallet.Volume / 1e9;
+                double volumeM = pallet.Volume / 1e6;
                 Console.WriteLine($"Паллет {pallet.Id}, Объём: {volumeM}м^3, " +
                                   $"Срок годности до: {pallet.Boxes.Max(b => b.ExpireDate):yyyy-MM-dd}");
             }
 
-            Console.WriteLine("\nСписок всех коробок:");
-            var boxes = warehouse.GetAllBoxes();
-            foreach (var box in boxes)
-            {
-                Console.WriteLine($"Коробка {box.Id}:  Вес: {box.Weight}");
-            }
+            //Console.WriteLine("\nСписок всех коробок:");
+            //var boxes = warehouse.GetAllBoxes();
+            //foreach (var box in boxes)
+            //{
+            //    Console.WriteLine($"Коробка {box.Id}:  Вес: {box.Weight} Объём: {box.Volume}");
+            //}
         }
         catch (Exception ex)
         {
